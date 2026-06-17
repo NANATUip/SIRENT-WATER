@@ -1,0 +1,6 @@
+{
+  "name": "Sonar Silent Hunt",
+  "description": "潜水艦の音響士となり、生波形ソナーやパッシブ聴音、アクティブピンを駆使して深海に潜む見えない敵艦と戦う戦術シミュレーションゲーム",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
