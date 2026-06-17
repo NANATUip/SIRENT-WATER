@@ -7,7 +7,8 @@ import {
   GameLog, 
   UpgradeStats, 
   GameState, 
-  EngineSpeed 
+  EngineSpeed,
+  Obstacle
 } from './types';
 import { RadarScreen } from './components/RadarScreen';
 import { StatsPanel } from './components/StatsPanel';
@@ -85,6 +86,8 @@ export default function App() {
     hasEmpTorpedo: false,
     hasShockwave: false,
     hasShield: false,
+    ammoCapacity: 0,     // NEW: Weapon ammo capacity upgrading
+    oxygenEfficiency: 0, // NEW: Oxygen depletion reduction level
   });
 
   const [logs, setLogs] = useState<GameLog[]>([]);
@@ -104,6 +107,7 @@ export default function App() {
   const enemiesRef = useRef<Enemy[]>([]);
   const torpedoesRef = useRef<Torpedo[]>([]);
   const decoysRef = useRef<Decoy[]>([]);
+  const obstaclesRef = useRef<Obstacle[]>([]);
   const lastTickTime = useRef<number>(0);
   const totalPlaySeconds = useRef<number>(0);
   const isSurfeceRestricted = useRef<boolean>(false);
@@ -141,10 +145,10 @@ export default function App() {
       hull: maxHullLimits,
       battery: maxBatteryLimits,
       oxygen: 100,
-      torpedoes: 10 + Math.min(2, level - 1),
-      decoys: 5 + Math.min(2, level - 1),
-      maxTorpedoes: 10 + Math.min(2, level - 1),
-      maxDecoys: 5 + Math.min(2, level - 1),
+      torpedoes: 10 + Math.min(2, level - 1) + upgradeStats.ammoCapacity * 3,
+      decoys: 5 + Math.min(2, level - 1) + upgradeStats.ammoCapacity * 2,
+      maxTorpedoes: 10 + Math.min(2, level - 1) + upgradeStats.ammoCapacity * 3,
+      maxDecoys: 5 + Math.min(2, level - 1) + upgradeStats.ammoCapacity * 2,
       isSurfaced: false,
       empTorpedoes: upgradeStats.hasEmpTorpedo ? 4 : 0,
       maxEmpTorpedoes: upgradeStats.hasEmpTorpedo ? 4 : 0,
@@ -176,6 +180,7 @@ export default function App() {
         heading: Math.floor(Math.random() * 360),
         speed: 1.0 + Math.random() * 1.5,
         hull: 40 + level * 10,
+        maxHull: 40 + level * 10,
         isDetected: false,
         lastDetectedTime: 0,
         passiveBearingNoise: 15,
@@ -198,6 +203,7 @@ export default function App() {
           heading: Math.floor(Math.random() * 360),
           speed: 2.2 + level * 0.2, // fast screws!
           hull: 80 + level * 15,
+          maxHull: 80 + level * 15,
           isDetected: false,
           lastDetectedTime: 0,
           passiveBearingNoise: 55, // Very loud screws! Easy to listen to
@@ -221,6 +227,7 @@ export default function App() {
           heading: 0,
           speed: 0, // static obstacle hazard
           hull: 10,
+          maxHull: 10,
           isDetected: false,
           lastDetectedTime: 0,
           passiveBearingNoise: 0, // silent mine!
@@ -233,6 +240,64 @@ export default function App() {
     enemiesRef.current = newEnemies;
     torpedoesRef.current = [];
     decoysRef.current = [];
+    
+    // 4. 入り組んだマップ（岩礁障害物）の配置
+    const newObstacles: Obstacle[] = [];
+    // マップ密度が適切になりつつお互いに隙間ができるように数を調節
+    const count = 24 + Math.min(8, level * 2);
+    const MIN_PASSABLE_GAP = 75; // 潜水艦の直径が約36pxなので余裕で通れるサイズ
+    
+    for (let i = 0; i < count; i++) {
+      let ox = 0;
+      let oy = 0;
+      let radius = 0;
+      let valid = false;
+      let attempts = 0;
+
+      while (!valid && attempts < 150) {
+        attempts++;
+        ox = 150 + Math.random() * (MAP_SIZE - 300);
+        oy = 150 + Math.random() * (MAP_SIZE - 300);
+        radius = 40 + Math.random() * 55; // 半径 40 〜 95 px
+
+        // プレイヤー初期位置(MAP_SIZE / 2, MAP_SIZE / 2)との距離
+        const px = MAP_SIZE / 2;
+        const py = MAP_SIZE / 2;
+        const distToPlayer = Math.sqrt((ox - px) ** 2 + (oy - py) ** 2);
+        
+        // プレイヤーから300px以上の安全距離
+        if (distToPlayer < 300) {
+          continue;
+        }
+
+        // 他の岩礁と重なっておらず、通れる隙間があるかチェック
+        let tooClose = false;
+        for (const existing of newObstacles) {
+          const dx = ox - existing.x;
+          const dy = oy - existing.y;
+          const dist = Math.sqrt(dx * dx + dy * dy);
+          if (dist < (radius + existing.radius + MIN_PASSABLE_GAP)) {
+            tooClose = true;
+            break;
+          }
+        }
+
+        if (!tooClose) {
+          valid = true;
+        }
+      }
+
+      if (valid) {
+        newObstacles.push({
+          id: `OBS_${i}_${Date.now()}`,
+          x: ox,
+          y: oy,
+          radius: radius,
+        });
+      }
+    }
+    obstaclesRef.current = newObstacles;
+
     setActivePingWave(0);
     setSonarMode('PASSIVE');
     
@@ -316,10 +381,12 @@ export default function App() {
 
     // Check if enemies are nearby and actively hunting (restrict surface safety)
     const hasDangerNearby = enemiesRef.current.some((e) => {
+      if (e.hull <= 0) return false; // Ignore destroyed enemies
+      if (e.type === 'MINE') return false; // Ignore static mines
       const dx = e.x - sub.x;
       const dy = e.y - sub.y;
       const d = Math.sqrt(dx * dx + dy * dy);
-      return d < 400 && e.behaviorState === 'HUNT';
+      return d < 250 && e.behaviorState === 'HUNT';
     });
 
     if (hasDangerNearby) {
@@ -598,9 +665,30 @@ export default function App() {
           setSubState((p) => ({ ...p, hasShield: true, shieldActive: true }));
         }, 10);
       }
+      else if (key === 'ammoCapacity') {
+        next.ammoCapacity += 1;
+        physicsSubRef.current.maxTorpedoes += 3;
+        physicsSubRef.current.torpedoes += 3;
+        physicsSubRef.current.maxDecoys += 2;
+        physicsSubRef.current.decoys += 2;
+        setTimeout(() => {
+          setSubState((p) => ({
+            ...p,
+            maxTorpedoes: p.maxTorpedoes + 3,
+            torpedoes: p.torpedoes + 3,
+            maxDecoys: p.maxDecoys + 2,
+            decoys: p.decoys + 2,
+          }));
+        }, 10);
+      }
+      else if (key === 'oxygenEfficiency') {
+        next.oxygenEfficiency += 1;
+      }
       else {
         const numericKey = key as 'hullPlating' | 'batteryCapacity';
-        next[numericKey] += 50;
+        if (numericKey === 'hullPlating' || numericKey === 'batteryCapacity') {
+          next[numericKey] += 50;
+        }
       }
       return next;
     });
@@ -705,6 +793,39 @@ export default function App() {
       sub.x = Math.max(100, Math.min(MAP_SIZE - 100, sub.x));
       sub.y = Math.max(100, Math.min(MAP_SIZE - 100, sub.y));
 
+      // --- 障害物（岩礁）との衝突判定とノックバック ---
+      obstaclesRef.current.forEach((obs) => {
+        const dx = sub.x - obs.x;
+        const dy = sub.y - obs.y;
+        const dist = Math.sqrt(dx * dx + dy * dy);
+        
+        const subRadius = 18;
+        if (dist < obs.radius + subRadius) {
+          // 反発方向
+          const pushX = dist > 0 ? (dx / dist) : 0;
+          const pushY = dist > 0 ? (dy / dist) : -1;
+          
+          // 位置を強制的に障害物の外側へ押し出す
+          sub.x = obs.x + (obs.radius + subRadius + 15) * pushX;
+          sub.y = obs.y + (obs.radius + subRadius + 15) * pushY;
+          
+          // 進行方向と逆にさらに少し下げてノックバック感を出す
+          const moveAngleRad = ((sub.heading - 90) * Math.PI) / 180;
+          sub.x -= 15 * Math.cos(moveAngleRad);
+          sub.y -= 15 * Math.sin(moveAngleRad);
+          
+          // 再度境界に収める
+          sub.x = Math.max(100, Math.min(MAP_SIZE - 100, sub.x));
+          sub.y = Math.max(100, Math.min(MAP_SIZE - 100, sub.y));
+          
+          const damage = 15;
+          sub.hull = Math.max(0, sub.hull - damage);
+          
+          audio.playExplosion(0.8);
+          addLog(`【触礁警告】: 岩礁障害物に激突！ 船体にダメージを受けました。 (-${damage} 船体)`, 'alert');
+        }
+      });
+
       // --- B. Oxygen & Battery levels maintenance ---
       if (sub.isSurfaced) {
         // Surface: recharge fast!
@@ -727,7 +848,11 @@ export default function App() {
       } else {
         // Submerged: drain oxy slowly
         // Deplete slower if operating Stop or Silent
-        const oxDrain = sub.speed === 3 ? 0.07 : sub.speed === 0 ? 0.02 : 0.035;
+        let oxDrain = sub.speed === 3 ? 0.07 : sub.speed === 0 ? 0.02 : 0.035;
+        if (upgradeStats.oxygenEfficiency > 0) {
+          const reduction = Math.min(0.7, upgradeStats.oxygenEfficiency * 0.18);
+          oxDrain *= (1 - reduction);
+        }
         sub.oxygen = Math.max(0, sub.oxygen - oxDrain);
 
         if (sub.oxygen <= 0) {
@@ -791,6 +916,16 @@ export default function App() {
         decoy.x += decoy.speed * Math.cos(decoyRad);
         decoy.y += decoy.speed * Math.sin(decoyRad);
         decoy.timeLeft--;
+
+        // 障害物との衝突
+        obstaclesRef.current.forEach((obs) => {
+          const odx = obs.x - decoy.x;
+          const ody = obs.y - decoy.y;
+          const odist = Math.sqrt(odx * odx + ody * ody);
+          if (odist < obs.radius + 6) {
+            decoy.timeLeft = 0; // 当たると消滅
+          }
+        });
       });
       // Filter out expired decoys safely
       decoysRef.current = decoysRef.current.filter((d) => d.timeLeft > 0);
@@ -925,6 +1060,48 @@ export default function App() {
           if (enemy.x < 150 || enemy.x > MAP_SIZE - 150) enemy.heading = (enemy.heading + 180) % 360;
           if (enemy.y < 150 || enemy.y > MAP_SIZE - 150) enemy.heading = (enemy.heading + 180) % 360;
         }
+
+        // --- 敵艦の岩礁衝突と衝突回避AI ---
+        obstaclesRef.current.forEach((obs) => {
+          const edx = enemy.x - obs.x;
+          const edy = enemy.y - obs.y;
+          const edist = Math.sqrt(edx * edx + edy * edy);
+          const enemyRadius = 18;
+
+          // 回避行動：衝突距離の手前（obs.radius + 110px）にいる場合、障害物から離れる方向に操舵する
+          if (edist < obs.radius + 110) {
+            // 障害物から離れる角度
+            let escapeAngle = (Math.atan2(edy, edx) * 180) / Math.PI + 90;
+            if (escapeAngle < 0) escapeAngle += 360;
+
+            let diff = escapeAngle - enemy.heading;
+            while (diff < -180) diff += 360;
+            while (diff > 180) diff -= 360;
+
+            // 回避するために少しずつ舵を回す（障害物回避を優先度を高くして転舵）
+            enemy.heading = (enemy.heading + Math.sign(diff) * 3.5 + 360) % 360;
+          }
+
+          // 直接衝突判定
+          if (edist < obs.radius + enemyRadius) {
+            const pushX = edist > 0 ? (edx / edist) : 0;
+            const pushY = edist > 0 ? (edy / edist) : -1;
+
+            // 障害物の外側へ押し戻す
+            enemy.x = obs.x + (obs.radius + enemyRadius + 12) * pushX;
+            enemy.y = obs.y + (obs.radius + enemyRadius + 12) * pushY;
+
+            // headingを障害物の反対側に向ける（跳ね返って進路を変える）
+            enemy.heading = (enemy.heading + 140 + Math.random() * 80) % 360;
+
+            // 衝突による船体ダメージ
+            const crashDamage = 15;
+            enemy.hull = Math.max(0, enemy.hull - crashDamage);
+
+            addLog(`聴音速報: 標的 CON-${enemy.id.slice(0, 3)} が岩礁障害物に衝突！ 金属大破壊音を探知！ (-${crashDamage} 船体)`, 'warning');
+            audio.playExplosion(0.65);
+          }
+        });
       });
 
       // --- G. Torpedo physics & tracking (Acoustic Homing) ---
@@ -991,7 +1168,8 @@ export default function App() {
             const dy = loudestY - torp.y;
             const distToTarget = Math.sqrt(dx * dx + dy * dy);
 
-            if (distToTarget < 500 && highestIntensity > 3) {
+            // 敵の魚雷はある程度の距離進むと（残り時間が 200 以下になると）追尾を停止し直進する
+            if (torp.timeLeft > 210 && distToTarget < 500 && highestIntensity > 3) {
               let targetAng = (Math.atan2(dy, dx) * 180) / Math.PI + 90;
               if (targetAng < 0) targetAng += 360;
 
@@ -1008,6 +1186,17 @@ export default function App() {
         torp.x += torp.speed * Math.cos(tRad);
         torp.y += torp.speed * Math.sin(tRad);
         torp.timeLeft--;
+
+        // 障害物との衝突
+        obstaclesRef.current.forEach((obs) => {
+          const odx = obs.x - torp.x;
+          const ody = obs.y - torp.y;
+          const odist = Math.sqrt(odx * odx + ody * ody);
+          if (odist < obs.radius + 4) {
+            torp.timeLeft = 0; // 当たると消滅
+            audio.playExplosion(0.35);
+          }
+        });
 
         // Collision Checks!
         if (torp.isPlayerOwned) {
@@ -1160,15 +1349,19 @@ export default function App() {
             </>
           )}
 
-          <div className="text-right">
-            <span className="text-[9px] text-slate-500 block leading-none">スコア</span>
-            <span className="font-mono text-xs leading-none text-emerald-400 font-bold">{gameState.score} pt</span>
-          </div>
+          {gameState.playState !== 'TITLE' && (
+            <>
+              <div className="text-right">
+                <span className="text-[9px] text-slate-500 block leading-none">スコア</span>
+                <span className="font-mono text-xs leading-none text-emerald-400 font-bold">{gameState.score} pt</span>
+              </div>
 
-          <div className="text-right">
-            <span className="text-[9px] text-slate-500 block leading-none">軍ゴールド</span>
-            <span className="font-mono text-xs leading-none text-amber-400 font-bold">{gameState.gold} Cr</span>
-          </div>
+              <div className="text-right">
+                <span className="text-[9px] text-slate-500 block leading-none">軍ゴールド</span>
+                <span className="font-mono text-xs leading-none text-amber-400 font-bold">{gameState.gold} Cr</span>
+              </div>
+            </>
+          )}
         </div>
       </header>
 
@@ -1423,7 +1616,7 @@ export default function App() {
                 {/* Visual indicator lines */}
                 <div className="absolute inset-y-0 left-0 w-3 bg-cyan-300 opacity-20 rounded-l-xl group-hover:opacity-40 transition-opacity"></div>
                 <Play className="w-3.5 h-3.5 fill-current text-slate-950" />
-                <span>潜航開始 // 二管注水・模擬戦展開 (CRASH DIVE PROT)</span>
+                <span>潜航開始 (CRASH DIVE PROT)</span>
                 <div className="absolute inset-y-0 right-0 w-3 bg-cyan-300 opacity-20 rounded-r-xl group-hover:opacity-40 transition-opacity"></div>
               </button>
 
@@ -1476,6 +1669,7 @@ export default function App() {
                   enemies={enemiesRef.current}
                   torpedoes={torpedoesRef.current}
                   decoys={decoysRef.current}
+                  obstacles={obstaclesRef.current}
                   sonarRange={INITIAL_SONAR_RANGE * upgradeStats.sonarRange}
                   onFireTorpedo={handleFireTorpedo}
                   onLaunchDecoy={handleLaunchDecoy}

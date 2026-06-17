@@ -1,6 +1,6 @@
 import React from 'react';
 import { UpgradeStats } from '../types';
-import { Radio, Heart, Zap, ArrowRight, Shield, RefreshCw } from 'lucide-react';
+import { Radio, Heart, Zap, ArrowRight, Shield, RefreshCw, Layers, Wind } from 'lucide-react';
 
 interface UpgradeScreenProps {
   gold: number;
@@ -25,6 +25,8 @@ export const UpgradeScreen: React.FC<UpgradeScreenProps> = ({
     hullPlating: Math.round(120 * (stats.hullPlating / 50)),
     batteryCapacity: Math.round(110 * (stats.batteryCapacity / 50)),
     decoyRange: Math.round(100 * stats.decoyRange),
+    ammoCapacity: Math.round(110 * (stats.ammoCapacity + 1)),
+    oxygenEfficiency: Math.round(100 * (stats.oxygenEfficiency + 1)),
   };
 
   const upgradeList = [
@@ -84,9 +86,29 @@ export const UpgradeScreen: React.FC<UpgradeScreenProps> = ({
       current: `デコイ出力補正 x${stats.decoyRange.toFixed(1)}`,
       next: `デコイ出力補正 x${(stats.decoyRange + 0.3).toFixed(1)}`,
       cost: costs.decoyRange,
-      desc: 'デコイの継続時間と放出気泡の増大ノイズ強度を強化。追従魚雷をより長く、遠くから引きつけます。',
+      desc: 'デコイ of duration とノイズ強度を強化。追従魚雷をより長く、遠くから引きつけます。',
       icon: <Shield className="w-5 h-5 text-indigo-400" />,
       maxed: stats.decoyRange >= 2.5,
+    },
+    {
+      key: 'ammoCapacity' as keyof UpgradeStats,
+      title: '兵装格納庫増設架 (Expanded Ordnance Locker)',
+      current: `容量補正 +${stats.ammoCapacity * 3}魚雷 / +${stats.ammoCapacity * 2}デコイ`,
+      next: `容量補正 +${(stats.ammoCapacity + 1) * 3}魚雷 / +${(stats.ammoCapacity + 1) * 2}デコイ`,
+      cost: costs.ammoCapacity,
+      desc: '急速魚雷ラック及びデコイ展開ドラムのスロットを拡張します。最大装填数が魚雷+3、デコイ+2増加。',
+      icon: <Layers className="w-5 h-5 text-orange-400" />,
+      maxed: stats.ammoCapacity >= 3,
+    },
+    {
+      key: 'oxygenEfficiency' as keyof UpgradeStats,
+      title: '半結晶超微細薄膜酸素還流器 (Oxygen Recirculator)',
+      current: `酸素消費量 ${Math.round((1 - Math.min(0.7, stats.oxygenEfficiency * 0.18)) * 100)}%`,
+      next: `酸素消費量 ${Math.round((1 - Math.min(0.7, (stats.oxygenEfficiency + 1) * 0.18)) * 100)}%`,
+      cost: costs.oxygenEfficiency,
+      desc: '二酸化炭素吸着効率を高め、潜航時の基礎酸素消費速度を削減します（レベル毎に消費-18%）。',
+      icon: <Wind className="w-5 h-5 text-sky-400" />,
+      maxed: stats.oxygenEfficiency >= 3,
     },
   ];
 

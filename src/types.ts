@@ -35,6 +35,7 @@ export interface Enemy {
   heading: number;
   speed: number;
   hull: number;
+  maxHull: number;
   isDetected: boolean;          // True when actively pinged or highly noisy
   lastDetectedTime: number;     // Timestamp or game time tick of last detection
   passiveBearingNoise: number;  // Noise level currently emitted (visible on passive)
@@ -59,6 +60,14 @@ export interface Torpedo {
   isHomingDecoy: boolean; // Tracking decoy or player/enemy
   timeLeft: number; // Remaining lifetime in frames
   isEmp?: boolean;        // NEW: EMP shock payload
+  homingTimeLeft?: number; // NEW: Duration of how many frames the homing logic works before failing and tracking straight
+}
+
+export interface Obstacle {
+  id: string;
+  x: number;
+  y: number;
+  radius: number;
 }
 
 export interface Decoy {
@@ -98,6 +107,8 @@ export interface UpgradeStats {
   hasEmpTorpedo: boolean;   // Wave 2+ EMP Torpedo Unlock
   hasShockwave: boolean;    // Wave 2+ Sonic Pulse Shockwave Unlock
   hasShield: boolean;       // Wave 2+ Active sound shield Unlock
+  ammoCapacity: number;     // NEW: Weapon ammo capacity upgrading
+  oxygenEfficiency: number; // NEW: Oxygen depletion reduction level
 }
 
 export interface GameState {

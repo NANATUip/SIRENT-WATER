@@ -1,13 +1,42 @@
 import React, { useRef, useEffect, useState } from 'react';
-import { Submarine, Enemy, Torpedo, Decoy, SonarBlip } from '../types';
+import { Submarine, Enemy, Torpedo, Decoy, SonarBlip, Obstacle } from '../types';
 import { audio } from '../lib/audio';
 import { Volume2, VolumeX, Eye, Radio, Shield, Zap } from 'lucide-react';
+
+// 決定論的なノイズによって、岩礁に歪(いびつ)で自然な形を与える関数
+// IDごとに固有のハッシュ(シード値)を計算し、描画フレーム間で揺れないようにします
+function getWarpedObstaclePoints(id: string, cx: number, cy: number, radius: number): { x: number; y: number }[] {
+  const points: { x: number; y: number }[] = [];
+  const segments = 24; // 滑らかで複雑な岩肌を表現するために24分割
+  
+  let seed = 0;
+  for (let i = 0; i < id.length; i++) {
+    seed += id.charCodeAt(i) * (i + 1);
+  }
+
+  for (let i = 0; i < segments; i++) {
+    const angle = (i * Math.PI * 2) / segments;
+    
+    // サイン波やハッシュ化した乱数を組み合わせ、うねりと尖りを作成
+    const pseudoRandom = Math.abs(Math.sin(seed + i * 2.3) * 10000) % 1;
+    const offsetFactor = 0.78 + pseudoRandom * 0.42; // 半径が0.78倍〜1.2倍の間で変形するように
+    
+    const r = radius * offsetFactor;
+    points.push({
+      x: cx + r * Math.cos(angle),
+      y: cy + r * Math.sin(angle)
+    });
+  }
+
+  return points;
+}
 
 interface RadarScreenProps {
   sub: Submarine;
   enemies: Enemy[];
   torpedoes: Torpedo[];
   decoys: Decoy[];
+  obstacles?: Obstacle[];
   sonarRange: number;
   onFireTorpedo: (heading: number) => void;
   onLaunchDecoy: () => void;
@@ -28,6 +57,7 @@ export const RadarScreen: React.FC<RadarScreenProps> = ({
   enemies,
   torpedoes,
   decoys,
+  obstacles = [],
   sonarRange,
   onFireTorpedo,
   onLaunchDecoy,
@@ -278,6 +308,61 @@ export const RadarScreen: React.FC<RadarScreenProps> = ({
         }
       }
 
+      // 5c. Draw Reefs and Rock Obstacles
+      obstacles.forEach((obs) => {
+        const dx = obs.x - sub.x;
+        const dy = obs.y - sub.y;
+        const dist = Math.sqrt(dx * dx + dy * dy);
+
+        // 探知範囲に近い場合のみ表示（うっすらした索敵感と深度を感じさせるために 1.3 倍まで許容）
+        if (dist > sonarRange * 1.3) return;
+
+        const rx = cx + (dx / sonarRange) * radarRadius;
+        const ry = cy + (dy / sonarRange) * radarRadius;
+        const rRadius = (obs.radius / sonarRange) * radarRadius;
+
+        let alpha = 0.45;
+        if (dist > sonarRange) {
+          // 探知圏外へのフェード
+          alpha = 0.45 * (1 - (dist - sonarRange) / (sonarRange * 0.3));
+        }
+
+        ctx.save();
+        ctx.beginPath();
+        
+        // 歪（いびつ）な多角形パスを生成して描画
+        const warpedPoints = getWarpedObstaclePoints(obs.id, rx, ry, rRadius);
+        if (warpedPoints.length > 0) {
+          ctx.moveTo(warpedPoints[0].x, warpedPoints[0].y);
+          for (let pIdx = 1; pIdx < warpedPoints.length; pIdx++) {
+            ctx.lineTo(warpedPoints[pIdx].x, warpedPoints[pIdx].y);
+          }
+          ctx.closePath();
+        }
+
+        // 半透明の岩肌パターンの表現
+        const grad = ctx.createRadialGradient(rx, ry, rRadius * 0.2, rx, ry, rRadius);
+        grad.addColorStop(0, `rgba(180, 83, 9, ${alpha * 0.85})`); // amber-700
+        grad.addColorStop(0.8, `rgba(120, 53, 4, ${alpha * 0.45})`); // amber-900
+        grad.addColorStop(1, `rgba(120, 53, 4, 0)`); // Fade edge
+        
+        ctx.fillStyle = grad;
+        ctx.fill();
+
+        // 輪郭線（ノイズ混じりでリアルなスキャン線に見えるように）
+        ctx.strokeStyle = `rgba(245, 158, 11, ${alpha * 0.75})`; // amber-500
+        ctx.lineWidth = 1.2;
+        ctx.stroke();
+
+        // テキストを一定のサイズ以上の岩礁に添える
+        if (rRadius > 20) {
+          ctx.fillStyle = `rgba(245, 158, 11, ${alpha * 0.5})`;
+          ctx.font = '8px monospace';
+          ctx.fillText('SHALLOW_REEF', rx - 28, ry + 2.5);
+        }
+        ctx.restore();
+      });
+
       // 6. Draw Decoys (Bubbling decoys that distract torpedoes)
       decoys.forEach((decoy) => {
         const dx = decoy.x - sub.x;
@@ -389,7 +474,19 @@ export const RadarScreen: React.FC<RadarScreenProps> = ({
           ctx.rotate(headingRad);
 
           // Draw distinct graphics per threat type
-          if (enemy.type === 'DESTROYER') {
+          if (enemy.hull <= 0) {
+            // Dead enemy: Draw "X" cross mark
+            ctx.strokeStyle = `rgba(239, 68, 68, ${alphaFade})`;
+            ctx.lineWidth = 2.5;
+            ctx.shadowColor = '#ef4444';
+            ctx.shadowBlur = 4;
+            ctx.beginPath();
+            ctx.moveTo(-6, -6);
+            ctx.lineTo(6, 6);
+            ctx.moveTo(6, -6);
+            ctx.lineTo(-6, 6);
+            ctx.stroke();
+          } else if (enemy.type === 'DESTROYER') {
             // Surface Destroyer Dropping charges (Draw elegant ironclad hull outline)
             ctx.fillStyle = `rgba(239, 68, 68, ${alphaFade})`;
             ctx.strokeStyle = `rgba(239, 68, 68, ${alphaFade * 0.5})`;
@@ -456,6 +553,39 @@ export const RadarScreen: React.FC<RadarScreenProps> = ({
           
           ctx.restore();
           ctx.shadowBlur = 0; // Reset glow
+
+          // Draw HP bar if the enemy is alive
+          if (enemy.hull > 0) {
+            const maxH = enemy.maxHull || (enemy.type === 'DESTROYER' ? 80 : (enemy.type === 'SUBMARINE' ? 40 : 10));
+            const pct = Math.max(0, Math.min(1, enemy.hull / maxH));
+            
+            // HP Bar container coordinates directly beneath the enemy icon
+            const barW = 24;
+            const barH = 3.5;
+            const bx = rx - barW / 2;
+            const by = ry + 12; // beneath enemy center
+
+            // High-contrast background of HP Bar (dark slate gray/black border)
+            ctx.fillStyle = `rgba(15, 23, 42, ${alphaFade * 0.9})`;
+            ctx.fillRect(bx, by, barW, barH);
+
+            // Active fill of HP Bar (emerald for high, amber for mid, red for low)
+            let hpColor = '#10b981'; // Green
+            if (pct < 0.3) {
+              hpColor = '#ef4444'; // Red
+            } else if (pct < 0.6) {
+              hpColor = '#f59e0b'; // Amber
+            }
+            ctx.fillStyle = hpColor;
+            ctx.globalAlpha = alphaFade;
+            ctx.fillRect(bx, by, barW * pct, barH);
+            ctx.globalAlpha = 1.0;
+
+            // Highly visible light border surrounding parent bar for extreme depth environments
+            ctx.strokeStyle = `rgba(255, 255, 255, ${alphaFade * 0.15})`;
+            ctx.lineWidth = 0.5;
+            ctx.strokeRect(bx, by, barW, barH);
+          }
 
           // Enemy distance-bearing HUD coordinate trace label
           ctx.fillStyle = `rgba(16, 185, 129, ${alphaFade * 0.5})`;
