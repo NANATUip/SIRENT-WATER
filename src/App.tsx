@@ -88,6 +88,7 @@ export default function App() {
     hasShield: false,
     ammoCapacity: 0,     // NEW: Weapon ammo capacity upgrading
     oxygenEfficiency: 0, // NEW: Oxygen depletion reduction level
+    torpedoDamage: 0,    // NEW: Torpedo warhead damage upgrade level
   });
 
   const [logs, setLogs] = useState<GameLog[]>([]);
@@ -133,7 +134,7 @@ export default function App() {
   // 3. GAME INITIALIZATION / SETUP LEVELS
   // ---------------------------------------------------------------------------
   const initLevel = (level: number) => {
-    addLog(`--- 第${level}作戦海域 潜入指揮開始 ---`, 'info');
+    addLog(`--- 海域${String(level).padStart(2, '0')} 潜入指揮開始 ---`, 'info');
     
     // Spawn submarine in center
     const freshSub: Submarine = {
@@ -170,7 +171,7 @@ export default function App() {
     const subCount = 2 + Math.min(3, Math.floor(level / 1.5));
     for (let i = 0; i < subCount; i++) {
       // Pick random distant location relative to player (avoid spawning directly on player)
-      const dist = 500 + Math.random() * 500;
+      const dist = 320 + Math.random() * 280;
       const angle = Math.random() * Math.PI * 2;
       newEnemies.push({
         id: `SUB_${i}_${Date.now()}`,
@@ -193,7 +194,7 @@ export default function App() {
     if (level >= 2) {
       const destCount = 1 + Math.min(2, Math.floor(level / 3));
       for (let i = 0; i < destCount; i++) {
-        const dist = 650 + Math.random() * 450;
+        const dist = 420 + Math.random() * 280;
         const angle = Math.random() * Math.PI * 2;
         newEnemies.push({
           id: `DST_${i}_${Date.now()}`,
@@ -217,7 +218,7 @@ export default function App() {
     if (level >= 2) {
       const mineCount = 1 + Math.min(5, level * 2);
       for (let i = 0; i < mineCount; i++) {
-        const dist = 300 + Math.random() * 500;
+        const dist = 240 + Math.random() * 320;
         const angle = Math.random() * Math.PI * 2;
         newEnemies.push({
           id: `MNE_${i}_${Date.now()}`,
@@ -684,6 +685,9 @@ export default function App() {
       else if (key === 'oxygenEfficiency') {
         next.oxygenEfficiency += 1;
       }
+      else if (key === 'torpedoDamage') {
+        next.torpedoDamage += 1;
+      }
       else {
         const numericKey = key as 'hullPlating' | 'batteryCapacity';
         if (numericKey === 'hullPlating' || numericKey === 'batteryCapacity') {
@@ -749,7 +753,7 @@ export default function App() {
       const aliveStandardEnemies = enemiesRef.current.filter((e) => e.type !== 'MINE' && e.hull > 0);
       if (aliveStandardEnemies.length === 0) {
         audio.stopKlaxon();
-        addLog(`【第${gameState.stage}海域 作戦成功】：警戒敵艦隊の全滅を確認。補給のためドックへ帰還せよ。`, 'success');
+        addLog(`【海域${String(gameState.stage).padStart(2, '0')} 作戦成功】：警戒敵艦隊の全滅を確認。補給のためドックへ帰還せよ。`, 'success');
         setGameState((prev) => ({
           ...prev,
           gold: prev.gold + 200 + prev.stage * 50,
@@ -1212,22 +1216,24 @@ export default function App() {
               torp.timeLeft = 0; // destroy torpedo
               
               if (torp.isEmp) {
-                enemy.hull -= 15; // smaller hull damage
+                const dmg = 15 + (upgradeStats.torpedoDamage || 0) * 5;
+                enemy.hull -= dmg; // smaller hull damage
                 enemy.isStunned = true;
                 enemy.stunTimer = 100; // 10 seconds (100 frame ticks of 100ms)
                 enemy.isDetected = true;
                 enemy.lastDetectedTime = Date.now();
                 enemy.behaviorState = 'HUNT';
                 
-                addLog(`【高周波電磁パルス炸裂】：敵艦 CON-${enemy.id.slice(0,3)} に高圧EMPが直撃！電子・推進計器を無効化、完全に機能停止（システム・マヒ状態）！`, 'success');
+                addLog(`【高周波電磁パルス炸裂】：敵艦 CON-${enemy.id.slice(0,3)} に高圧EMPが直撃！電子・推進計器を無効化、完全に機能停止（システム・マヒ状態）！ (-${dmg} 船体)`, 'success');
                 audio.playExplosion(0.9);
               } else {
-                enemy.hull -= 50; // Deal heavy blow
+                const dmg = 50 + (upgradeStats.torpedoDamage || 0) * 15;
+                enemy.hull -= dmg; // Deal heavy blow
                 enemy.isDetected = true;
                 enemy.lastDetectedTime = Date.now();
                 enemy.behaviorState = 'HUNT';
 
-                addLog(`ソナー報告。敵艦 CON-${enemy.id.slice(0,3)} に直接雷撃命中を確認！ 爆発音が反響しています。`, 'success');
+                addLog(`ソナー報告。敵艦 CON-${enemy.id.slice(0,3)} に直接雷撃命中を確認！ 爆発音が反響しています。 (-${dmg} 船体)`, 'success');
                 audio.playExplosion(1.2);
               }
 
@@ -1337,7 +1343,7 @@ export default function App() {
 
               <div className="text-right hidden sm:block">
                 <span className="text-[9px] text-slate-500 block leading-none">作戦海域</span>
-                <span className="font-mono text-xs leading-none text-cyan-400 font-bold">海域 #{gameState.stage}</span>
+                <span className="font-mono text-xs leading-none text-cyan-400 font-bold">海域${String(gameState.stage).padStart(2, '0')}</span>
               </div>
 
               <div className="text-right hidden sm:block">
@@ -1765,7 +1771,7 @@ export default function App() {
               <div className="bg-neutral-950 border border-neutral-850 p-4 rounded-md text-left text-xs mb-6 space-y-2">
                 <div className="flex justify-between">
                   <span className="text-neutral-500">到達作戦海域 (LAST SECTOR):</span>
-                  <span className="font-bold text-neutral-100">WAVE {gameState.stage}</span>
+                  <span className="font-bold text-neutral-100 font-mono">海域${String(gameState.stage).padStart(2, '0')}</span>
                 </div>
                 <div className="flex justify-between">
                   <span className="text-neutral-500">最終獲得軍資 (SALVAGED CREDITS):</span>

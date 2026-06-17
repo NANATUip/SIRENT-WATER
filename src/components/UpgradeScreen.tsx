@@ -1,6 +1,6 @@
 import React from 'react';
 import { UpgradeStats } from '../types';
-import { Radio, Heart, Zap, ArrowRight, Shield, RefreshCw, Layers, Wind } from 'lucide-react';
+import { Radio, Heart, Zap, ArrowRight, Shield, RefreshCw, Layers, Wind, Flame } from 'lucide-react';
 
 interface UpgradeScreenProps {
   gold: number;
@@ -27,6 +27,7 @@ export const UpgradeScreen: React.FC<UpgradeScreenProps> = ({
     decoyRange: Math.round(100 * stats.decoyRange),
     ammoCapacity: Math.round(110 * (stats.ammoCapacity + 1)),
     oxygenEfficiency: Math.round(100 * (stats.oxygenEfficiency + 1)),
+    torpedoDamage: Math.round(150 * (stats.torpedoDamage + 1)),
   };
 
   const upgradeList = [
@@ -109,6 +110,16 @@ export const UpgradeScreen: React.FC<UpgradeScreenProps> = ({
       desc: '二酸化炭素吸着効率を高め、潜航時の基礎酸素消費速度を削減します（レベル毎に消費-18%）。',
       icon: <Wind className="w-5 h-5 text-sky-400" />,
       maxed: stats.oxygenEfficiency >= 3,
+    },
+    {
+      key: 'torpedoDamage' as keyof UpgradeStats,
+      title: '高密度重金属爆薬弾頭 (High-Density Heavy Warhead)',
+      current: `通常雷撃: ${50 + stats.torpedoDamage * 15} dmg / EMP: ${15 + stats.torpedoDamage * 5}`,
+      next: `通常雷撃: ${50 + (stats.torpedoDamage + 1) * 15} dmg / EMP: ${15 + (stats.torpedoDamage + 1) * 5}`,
+      cost: costs.torpedoDamage,
+      desc: '魚雷の弾頭内殻に超重金属中性合金と複合HE(高爆薬)を充填、装甲貫通破壊力を飛躍的に向上します（通常+15、EMP+5ダメージ）。',
+      icon: <Flame className="w-5 h-5 text-red-400" />,
+      maxed: stats.torpedoDamage >= 3,
     },
   ];
 
@@ -240,7 +251,7 @@ export const UpgradeScreen: React.FC<UpgradeScreenProps> = ({
           onClick={onNextStage}
           className="bg-emerald-500 hover:bg-emerald-400 text-black font-extrabold px-6 py-2.5 rounded text-xs tracking-wider flex items-center gap-2 active:scale-95 transition-all outline-none"
         >
-          <span>次作戦海域へ潜望鏡を降ろす (NEXT SECTOR)</span>
+          <span>次作戦海域へ進む (NEXT SECTOR)</span>
           <ArrowRight className="w-4 h-4" />
         </button>
       </div>

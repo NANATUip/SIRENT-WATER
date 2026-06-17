@@ -109,6 +109,7 @@ export interface UpgradeStats {
   hasShield: boolean;       // Wave 2+ Active sound shield Unlock
   ammoCapacity: number;     // NEW: Weapon ammo capacity upgrading
   oxygenEfficiency: number; // NEW: Oxygen depletion reduction level
+  torpedoDamage: number;    // NEW: Torpedo warhead damage upgrade level
 }
 
 export interface GameState {
